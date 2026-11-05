@@ -1,0 +1,76 @@
+# Configuración común. El perfil activo decide la base de datos:
+#   local (default): H2 en memoria            ->  mvn spring-boot:run
+#   aws:             PostgreSQL en RDS        ->  SPRING_PROFILES_ACTIVE=aws (variable de la Lambda)
+# En ambos perfiles el JWT se valida contra el User Pool de Cognito.
+server:
+  port: 8082
+
+spring:
+  application:
+    name: ms-pedidos360-orders
+  profiles:
+    active: local
+  rabbitmq:
+    # Conexión al broker. En AWS apunta a la IP privada de la EC2 donde corre RabbitMQ (puerto 5672).
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    ssl:
+      enabled: ${RABBITMQ_SSL:false}
+    connection-timeout: 5s
+    # "simple" permite esperar la confirmación del broker con waitForConfirms (ver RabbitEventPublisher).
+    publisher-confirm-type: simple
+    listener:
+      simple:
+        # Un mensaje que falla NO se reencola en bucle: RabbitMQ lo manda a la DLQ de su cola.
+        default-requeue-rejected: false
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Cognito publica su JWKS a partir de este issuer. AWS_REGION lo inyecta Lambda solo.
+          issuer-uri: https://cognito-idp.${AWS_REGION:us-east-1}.amazonaws.com/${COGNITO_USER_POOL_ID:us-east-1_u6NeyPwe1}
+
+pedidos360:
+  cors:
+    # Dominio del frontend (en AWS: el dominio de Amplify). Varios separados por coma.
+    allowed-origins: ${ALLOWED_ORIGIN:http://localhost:5173}
+  rabbit:
+    # false = los eventos solo se registran en el log (no hace falta broker). En AWS se activa solo (application-aws.yml).
+    enabled: ${RABBITMQ_ENABLED:false}
+    # Solo para pruebas locales: escucha las colas y procesa los eventos sin AWS (ver README).
+    local-consumer: ${RABBITMQ_LOCAL_CONSUMER:false}
+    exchange: ${RABBITMQ_EXCHANGE:pedidos360.eventos}
+    dead-letter-exchange: ${RABBITMQ_DLX:pedidos360.eventos.dlx}
+    # Cola de PedidoAceptado: la vacía el servicio rabbit-bridge (EC2) hacia el tópico SNS pedidos360-pedido-aceptado.
+    pedido-aceptado-queue: ${RABBITMQ_PEDIDO_ACEPTADO_QUEUE:pedidos360.pedido-aceptado}
+    # Cola de StockDescontado / StockRechazado: la vacía el servicio rabbit-bridge (EC2) hacia el tópico SNS pedidos360-stock-resultado.
+    stock-resultado-queue: ${RABBITMQ_STOCK_RESULTADO_QUEUE:pedidos360.stock-resultado}
+    # Un mensaje que lleve más de 1 h sin procesarse pasa a la DLQ en vez de perderse.
+    message-ttl-ms: ${RABBITMQ_MESSAGE_TTL_MS:3600000}
+  catalog:
+    # URL base de ms-catalog (solo consultas de productos). Local: http://localhost:8081. AWS: invoke URL del API Gateway
+    # (sin /api al final), p. ej. https://xxxx.execute-api.us-east-1.amazonaws.com
+    base-url: ${CATALOG_SERVICE_URL:http://localhost:8081}
+
+logging:
+  level:
+    com.pedidos360: INFO   # los logs del flujo de eventos (outbox, RabbitMQ, SNS, consumidores) deben verse siempre
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+  health:
+    diskspace:
+      enabled: false   # en Lambda el disco es de solo lectura y haría fallar el health
+    db:
+      enabled: true
+    rabbit:
+      enabled: false   # que el health de la API no dependa del broker (la API sigue sirviendo consultas aunque RabbitMQ caiga)

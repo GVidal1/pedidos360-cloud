@@ -1,0 +1,19 @@
+# RabbitMQ (local o en la EC2). Panel de administración: http://<host>:15672
+#   Local:  docker compose up -d                       (usuario guest / guest)
+#   EC2:    RABBITMQ_USER=pedidos360 RABBITMQ_PASSWORD='<clave>' docker compose up -d
+# El usuario "guest" solo puede conectarse desde localhost: para que las Lambdas entren hay que usar otro usuario.
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+volumes:
+  rabbitmq-data:

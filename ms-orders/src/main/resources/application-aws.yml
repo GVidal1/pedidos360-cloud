@@ -1,0 +1,36 @@
+spring:
+  config:
+    activate:
+      on-profile: aws
+
+  datasource:
+    # Base de datos por servicio: cada microservicio tiene su PROPIA instancia RDS (y su propio
+    # RDS Proxy). Por eso DB_PROXY_ENDPOINT / DB_USERNAME / DB_PASSWORD son distintos en cada Lambda.
+    # Ningún servicio accede a la base del otro: se comunican por HTTP (consultas) y por eventos.
+    url: jdbc:postgresql://${DB_PROXY_ENDPOINT}:5432/${DB_NAME:pedidos360}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 3
+      minimum-idle: 1
+      connection-timeout: 10000
+      idle-timeout: 300000
+
+  rabbitmq:
+    # RabbitMQ propio en una EC2 de la misma VPC (IP privada, sin TLS). Sobrescribibles con RABBITMQ_PORT / RABBITMQ_SSL.
+    port: ${RABBITMQ_PORT:5672}
+    ssl:
+      enabled: ${RABBITMQ_SSL:false}
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: false
+    open-in-view: false
+
+pedidos360:
+  rabbit:
+    # En AWS los eventos SIEMPRE van a RabbitMQ.
+    enabled: ${RABBITMQ_ENABLED:true}
